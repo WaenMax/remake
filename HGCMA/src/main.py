@@ -82,6 +82,7 @@ def train():
     hyper_dict["aux_mask_rate_min"] = args.aux_mask_rate_min
     hyper_dict["aux_mask_rate_max"] = args.aux_mask_rate_max
     hyper_dict["semantic_keep_strength"] = args.semantic_keep_strength
+    hyper_dict["feature_keep_strength"] = args.feature_keep_strength
     hyper_dict["keep_prob_floor"] = args.keep_prob_floor
     hyper_dict["keep_prob_ceiling"] = args.keep_prob_ceiling
     h = Para(hyper_dict)

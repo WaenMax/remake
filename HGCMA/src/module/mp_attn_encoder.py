@@ -200,6 +200,7 @@ class Mp_attn_encoder(nn.Module):
         self.aux_mask_rate_min = getattr(h, "aux_mask_rate_min", 0.30)
         self.aux_mask_rate_max = getattr(h, "aux_mask_rate_max", 0.50)
         self.semantic_keep_strength = getattr(h, "semantic_keep_strength", 0.20)
+        self.feature_keep_strength = getattr(h, "feature_keep_strength", 0.30)
         self.keep_prob_floor = getattr(h, "keep_prob_floor", 0.05)
         self.keep_prob_ceiling = getattr(h, "keep_prob_ceiling", 0.98)
 
@@ -236,11 +237,8 @@ class Mp_attn_encoder(nn.Module):
 
         return float(min(max(mask_rate, 0.0), 0.95))
 
-    def _sample_adaptive_edges(self, edge_idx, edge_weight, mp):
+    def _build_keep_prob(self, edge_idx, edge_weight, node_features, mp):
         edge_num = edge_idx.shape[1]
-        if edge_num <= 1:
-            return edge_idx
-
         mask_rate = self._get_adaptive_mask_rate(mp)
         base_keep_prob = 1.0 - mask_rate
 
@@ -256,8 +254,38 @@ class Mp_attn_encoder(nn.Module):
                 centered_weight = norm_weight - norm_weight.mean()
                 keep_prob = base_keep_prob + self.semantic_keep_strength * centered_weight
 
+        src_feat = node_features.index_select(0, edge_idx[0])
+        dst_feat = node_features.index_select(0, edge_idx[1])
+        feat_similarity = F.cosine_similarity(src_feat, dst_feat, dim=-1, eps=1e-8)
+        feat_similarity = (feat_similarity + 1.0) * 0.5
+        feat_similarity = feat_similarity - feat_similarity.mean()
+        keep_prob = keep_prob + self.feature_keep_strength * feat_similarity
+
         keep_prob = keep_prob.clamp(self.keep_prob_floor, self.keep_prob_ceiling)
+        return keep_prob
+
+    def _sample_adaptive_edges(self, edge_idx, edge_weight, node_features, mp):
+        edge_num = edge_idx.shape[1]
+        if edge_num <= 1:
+            return edge_idx
+
+        keep_prob = self._build_keep_prob(edge_idx, edge_weight, node_features, mp)
         keep_mask = torch.bernoulli(keep_prob).to(dtype=torch.bool)
+
+        target_index = edge_idx[1]
+        node_num = node_features.shape[0]
+        for node_id in torch.unique(target_index):
+            node_edge_index = torch.nonzero(target_index == node_id, as_tuple=False).view(-1)
+            if node_edge_index.numel() == 0:
+                continue
+
+            local_keep_mask = keep_mask.index_select(0, node_edge_index)
+            if torch.any(local_keep_mask):
+                continue
+
+            local_keep_prob = keep_prob.index_select(0, node_edge_index)
+            best_edge_offset = torch.argmax(local_keep_prob)
+            keep_mask[node_edge_index[best_edge_offset]] = True
 
         if not torch.any(keep_mask):
             keep_mask[torch.argmax(keep_prob)] = True
@@ -283,7 +311,7 @@ class Mp_attn_encoder(nn.Module):
 
             if self.training and self.nei_mask and not full:
                 if self.adaptive_nei_mask:
-                    edge_idx = self._sample_adaptive_edges(edge_idx, edge_weight, mp)
+                    edge_idx = self._sample_adaptive_edges(edge_idx, edge_weight, d.h, mp)
                 else:
                     edge_num = edge_idx.shape[1]
                     egde_indices = torch.randperm(edge_num)[:int(edge_num * (1 - self.nei_rate))].to(edge_idx.device)

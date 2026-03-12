@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import random
-from torch.distributions.binomial import Binomial
 
 
 class Attention(nn.Module):
@@ -191,6 +190,79 @@ class Mp_attn_encoder(nn.Module):
 
         self.mp_prob = h.mp_prob
         self.nei_rate = h.nei_rate
+        self.adaptive_nei_mask = getattr(h, "adaptive_nei_mask", False)
+        self.core_mp_name = set(getattr(h, "core_mp_name", []))
+        self.aux_mp_name = set(getattr(h, "aux_mp_name", []))
+        self.mp_stats = getattr(h, "mp_stats", {})
+
+        self.core_mask_rate_min = getattr(h, "core_mask_rate_min", 0.10)
+        self.core_mask_rate_max = getattr(h, "core_mask_rate_max", 0.20)
+        self.aux_mask_rate_min = getattr(h, "aux_mask_rate_min", 0.30)
+        self.aux_mask_rate_max = getattr(h, "aux_mask_rate_max", 0.50)
+        self.semantic_keep_strength = getattr(h, "semantic_keep_strength", 0.20)
+        self.keep_prob_floor = getattr(h, "keep_prob_floor", 0.05)
+        self.keep_prob_ceiling = getattr(h, "keep_prob_ceiling", 0.98)
+
+        self.semantic_density_range = self._build_stat_range("semantic_density")
+        self.structural_sparsity_range = self._build_stat_range("structural_sparsity")
+
+    def _build_stat_range(self, key):
+        stat_values = [float(stats[key]) for stats in self.mp_stats.values()] if self.mp_stats else [0.0]
+        return min(stat_values), max(stat_values)
+
+    def _normalize_stat(self, value, stat_range):
+        stat_min, stat_max = stat_range
+        if abs(stat_max - stat_min) < 1e-12:
+            return 0.5
+        return (float(value) - stat_min) / (stat_max - stat_min)
+
+    def _get_adaptive_mask_rate(self, mp):
+        if mp not in self.mp_stats:
+            return self.nei_rate
+
+        mp_stat = self.mp_stats[mp]
+        semantic_density = self._normalize_stat(mp_stat["semantic_density"], self.semantic_density_range)
+        structural_sparsity = self._normalize_stat(mp_stat["structural_sparsity"], self.structural_sparsity_range)
+        structural_density = 1.0 - structural_sparsity
+
+        if mp in self.core_mp_name:
+            keep_score = 0.5 * (semantic_density + structural_density)
+            mask_rate = self.core_mask_rate_max - (self.core_mask_rate_max - self.core_mask_rate_min) * keep_score
+        elif mp in self.aux_mp_name:
+            perturb_score = 0.5 * ((1.0 - semantic_density) + structural_sparsity)
+            mask_rate = self.aux_mask_rate_min + (self.aux_mask_rate_max - self.aux_mask_rate_min) * perturb_score
+        else:
+            mask_rate = self.nei_rate
+
+        return float(min(max(mask_rate, 0.0), 0.95))
+
+    def _sample_adaptive_edges(self, edge_idx, edge_weight, mp):
+        edge_num = edge_idx.shape[1]
+        if edge_num <= 1:
+            return edge_idx
+
+        mask_rate = self._get_adaptive_mask_rate(mp)
+        base_keep_prob = 1.0 - mask_rate
+
+        if edge_weight.numel() == 0:
+            keep_prob = torch.full((edge_num,), base_keep_prob, device=edge_idx.device)
+        else:
+            weight_min = edge_weight.min()
+            weight_max = edge_weight.max()
+            if torch.abs(weight_max - weight_min) < 1e-12:
+                keep_prob = torch.full((edge_num,), base_keep_prob, device=edge_idx.device)
+            else:
+                norm_weight = (edge_weight - weight_min) / (weight_max - weight_min)
+                centered_weight = norm_weight - norm_weight.mean()
+                keep_prob = base_keep_prob + self.semantic_keep_strength * centered_weight
+
+        keep_prob = keep_prob.clamp(self.keep_prob_floor, self.keep_prob_ceiling)
+        keep_mask = torch.bernoulli(keep_prob).to(dtype=torch.bool)
+
+        if not torch.any(keep_mask):
+            keep_mask[torch.argmax(keep_prob)] = True
+
+        return edge_idx[:, keep_mask]
 
     def forward(self, d, full=False):
         embeds = []
@@ -209,11 +281,13 @@ class Mp_attn_encoder(nn.Module):
             edge_idx = d.mp_dict[mp]._indices()
             edge_weight = d.mp_dict[mp]._values()
 
-            # random mask
             if self.training and self.nei_mask and not full:
-                edge_num = edge_idx.shape[1]
-                egde_indices = torch.randperm(edge_num)[:int(edge_num * (1 - self.nei_rate))].to(edge_idx.device)
-                edge_idx = edge_idx.index_select(1, egde_indices)
+                if self.adaptive_nei_mask:
+                    edge_idx = self._sample_adaptive_edges(edge_idx, edge_weight, mp)
+                else:
+                    edge_num = edge_idx.shape[1]
+                    egde_indices = torch.randperm(edge_num)[:int(edge_num * (1 - self.nei_rate))].to(edge_idx.device)
+                    edge_idx = edge_idx.index_select(1, egde_indices)
                 
             attn_embed = self.node_att[mp](d.h, edge_idx)
             embeds.append(attn_embed)

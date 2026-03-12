@@ -36,6 +36,14 @@ def acm_params():
     # CL parameters
     parser.add_argument('--mp_prob', type=float, default=0.2)
     parser.add_argument('--nei_rate', type=float, default=0.3)
+    parser.add_argument('--adaptive_nei_mask', type=bool, default=False)
+    parser.add_argument('--core_mask_rate_min', type=float, default=0.10)
+    parser.add_argument('--core_mask_rate_max', type=float, default=0.20)
+    parser.add_argument('--aux_mask_rate_min', type=float, default=0.30)
+    parser.add_argument('--aux_mask_rate_max', type=float, default=0.50)
+    parser.add_argument('--semantic_keep_strength', type=float, default=0.20)
+    parser.add_argument('--keep_prob_floor', type=float, default=0.05)
+    parser.add_argument('--keep_prob_ceiling', type=float, default=0.98)
 
     args, _ = parser.parse_known_args()
     args.type_num = [3025, 5912, 57]  # the number of every node type
@@ -75,6 +83,14 @@ def dblp_params():
     # CL parameters
     parser.add_argument('--mp_prob', type=float, default=0.7)
     parser.add_argument('--nei_rate', type=float, default=0.3)
+    parser.add_argument('--adaptive_nei_mask', type=bool, default=False)
+    parser.add_argument('--core_mask_rate_min', type=float, default=0.10)
+    parser.add_argument('--core_mask_rate_max', type=float, default=0.20)
+    parser.add_argument('--aux_mask_rate_min', type=float, default=0.30)
+    parser.add_argument('--aux_mask_rate_max', type=float, default=0.50)
+    parser.add_argument('--semantic_keep_strength', type=float, default=0.20)
+    parser.add_argument('--keep_prob_floor', type=float, default=0.05)
+    parser.add_argument('--keep_prob_ceiling', type=float, default=0.98)
 
     args, _ = parser.parse_known_args()
     args.type_num = [4057, 14328, 20]  # the number of every node type
@@ -114,6 +130,14 @@ def imdb_params():
     # CL parameters
     parser.add_argument('--mp_prob', type=float, default=1.0)
     parser.add_argument('--nei_rate', type=float, default=0.7)
+    parser.add_argument('--adaptive_nei_mask', type=bool, default=False)
+    parser.add_argument('--core_mask_rate_min', type=float, default=0.10)
+    parser.add_argument('--core_mask_rate_max', type=float, default=0.20)
+    parser.add_argument('--aux_mask_rate_min', type=float, default=0.30)
+    parser.add_argument('--aux_mask_rate_max', type=float, default=0.50)
+    parser.add_argument('--semantic_keep_strength', type=float, default=0.20)
+    parser.add_argument('--keep_prob_floor', type=float, default=0.05)
+    parser.add_argument('--keep_prob_ceiling', type=float, default=0.98)
     
     args, _ = parser.parse_known_args()
     args.type_num = [4661, 2270, 5841]  # the number of every node type

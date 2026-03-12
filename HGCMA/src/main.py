@@ -51,6 +51,7 @@ def train():
     print("auxiliary meta-paths:", ", ".join(mp_metadata["aux_mp_names"]))
     print("mp_mask:", str(args.mp_mask))
     print("nei_mask:", str(args.nei_mask))
+    print("adaptive_nei_mask:", str(args.adaptive_nei_mask))
     print("mp_prob:", str(args.mp_prob))
     print("nei_rate:", str(args.nei_rate))
     print("epochs:", str(args.epochs))
@@ -75,6 +76,14 @@ def train():
     hyper_dict["nei_mask"] = args.nei_mask
     hyper_dict["mp_prob"] = args.mp_prob
     hyper_dict["nei_rate"] = args.nei_rate
+    hyper_dict["adaptive_nei_mask"] = args.adaptive_nei_mask
+    hyper_dict["core_mask_rate_min"] = args.core_mask_rate_min
+    hyper_dict["core_mask_rate_max"] = args.core_mask_rate_max
+    hyper_dict["aux_mask_rate_min"] = args.aux_mask_rate_min
+    hyper_dict["aux_mask_rate_max"] = args.aux_mask_rate_max
+    hyper_dict["semantic_keep_strength"] = args.semantic_keep_strength
+    hyper_dict["keep_prob_floor"] = args.keep_prob_floor
+    hyper_dict["keep_prob_ceiling"] = args.keep_prob_ceiling
     h = Para(hyper_dict)
     
     model = HeCL(h)
